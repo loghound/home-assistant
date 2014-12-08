@@ -4,3 +4,6 @@
 [submodule "homeassistant/external/pywemo"]
 	path = homeassistant/external/pywemo
 	url = https://github.com/balloob/pywemo.git
+[submodule "homeassistant/external/lifx"]
+	path = homeassistant/external/lifx
+	url = https://github.com/sharph/lifx-python

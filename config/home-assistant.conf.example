@@ -11,6 +11,9 @@ api_password=mypass
 [light]
 platform=hue
 
+[light 2]
+platform=lifx
+
 [device_tracker]
 # The following types are available: netgear, tomato, luci
 platform=netgear

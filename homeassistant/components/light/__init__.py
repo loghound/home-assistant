@@ -75,6 +75,9 @@ ATTR_TRANSITION = "transition"
 # lists holding color values
 ATTR_RGB_COLOR = "rgb_color"
 ATTR_XY_COLOR = "xy_color"
+ATTR_HUE = "hue"
+ATTR_SATURATION = "saturation"
+ATTR_KELVIN = "kelvin"
 
 # int with value 0 .. 255 representing brightness of the light
 ATTR_BRIGHTNESS = "brightness"
