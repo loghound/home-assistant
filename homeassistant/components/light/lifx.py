@@ -32,7 +32,10 @@ def get_devices(hass, config):
         all_lights = lifx.get_lights()
 
         for light in all_lights:
-            lights[light.addr] = LifxLight(light)
+            if lights.get(light.addr):
+                lights[light.addr].light = light
+            else:
+                lights[light.addr] = LifxLight(light, update_lights)
 
     update_lights()
 
@@ -46,8 +49,9 @@ class LifxLight(ToggleDevice):
 
      """
 
-    def __init__(self, lifxLightObj):
+    def __init__(self, lifxLightObj, update):
         self.light = lifxLightObj
+        self.update_lights = update
         self.powered = self.light.power
 
     def get_name(self):
@@ -91,4 +95,4 @@ class LifxLight(ToggleDevice):
 
     def update(self):
         """ Synchronize state with bridge. """
-        pass
+        self.update_lights()
