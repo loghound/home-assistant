@@ -92,6 +92,14 @@ password=MY_PASSWORD
 
 Once tracking the `device_tracker` component will maintain a file in your config dir called `known_devices.csv`. Edit this file to adjust which devices have to be tracked.
 
+As an alternative to the router-based device tracking, it is possible to directly scan the network for devices by using nmap. The IP addresses to scan can be specified in any format that nmap understands, including the network-prefix notation (`192.168.1.1/24`) and the range notation (`192.168.1.1-255`).
+
+```
+[device_tracker]
+platform=nmap_tracker
+hosts=192.168.1.1/24
+```
+
 <a name='customizing'></a>
 ## Further customizing Home Assistant
 
@@ -182,7 +190,7 @@ Registers services `light/turn_on` and `light/turn_off` to turn a or all lights 
 
 Optional service data:
   - `entity_id` - only act on specific light. Else targets all.
-  - `transition_seconds` - seconds to take to swithc to new state.
+  - `transition_seconds` - seconds to take to switch to new state.
   - `profile` - which light profile to use.
   - `xy_color` - two comma seperated floats that represent the color in XY
   - `rgb_color` - three comma seperated integers that represent the color in RGB
@@ -227,6 +235,15 @@ Registers service `browser/browse_url` that opens `url` as specified in event_da
 **tellstick_sensor**
 Shows the values of that sensors that is connected to your Tellstick.
 
+**simple_alarm**
+Will provide simple alarm functionality. Will flash a light shortly if a known device comes home. Will flash the lights red if the lights turn on while no one is home.
+
+Depends on device_tracker, light.
+
+Config options:
+known_light: entity id of the light/light group to target to flash when a known device comes home
+unknown_light: entity if of the light/light group to target when a light is turned on while no one is at home.
+
 <a name='API'></a>
 ## Rest API
 
@@ -237,7 +254,7 @@ Home Assistent runs a webserver accessible on port 8123.
 
 In the package `homeassistant.remote` a Python API on top of the HTTP API can be found.
 
-The API accepts and returns only JSON encoded objects. All API calls have to be accompanied by the header "HA-Access" with as value the api password (as specified in `home-assistant.conf`).
+The API accepts and returns only JSON encoded objects. All API calls have to be accompanied by the header "X-HA-Access" with as value the api password (as specified in `home-assistant.conf`).
 
 Successful calls will return status code 200 or 201. Other status codes that can return are:
  - 400 (Bad Request)
@@ -362,13 +379,29 @@ optional body: JSON encoded object that represents event_data
 ```
 
 **/api/services/&lt;domain>/&lt;service>** - POST<br>
-Calls a service within a specific domain.<br>
+Calls a service within a specific domain. Will return when the service has been executed or 10 seconds has past, whichever comes first.<br>
 optional body: JSON encoded object that represents service_data
 
+Returns a list of states that have changed since the start of this service call.
+
 ```json
-{
-    "message": "Service keyboard/volume_up called."
-}
+[
+    {
+        "attributes": {
+            "next_rising": "07:04:15 29-10-2013",
+            "next_setting": "18:00:31 29-10-2013"
+        },
+        "entity_id": "sun.sun",
+        "last_changed": "23:24:33 28-10-2013",
+        "state": "below_horizon"
+    },
+    {
+        "attributes": {},
+        "entity_id": "process.Dropbox",
+        "last_changed": "23:24:33 28-10-2013",
+        "state": "on"
+    }
+]
 ```
 
 **/api/event_forwarding** - POST<br>
