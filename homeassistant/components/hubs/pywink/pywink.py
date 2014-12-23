@@ -1,8 +1,12 @@
 __author__ = 'JOHNMCL'
 
 import json
+from datetime import timedelta
+import logging
 
 import requests
+
+from homeassistant.util import Throttle
 
 
 baseUrl = "https://winkapi.quirky.com"
@@ -10,7 +14,8 @@ baseUrl = "https://winkapi.quirky.com"
 object_type = "light_bulb"
 object_type_plural = "light_bulbs"
 
-bearer_token=""
+bearer_token = ""
+wink_json = {}
 
 headers = {}
 
@@ -74,8 +79,8 @@ class wink_binary_switch():
         },
         "current_budget": null,
         "lat_lng": [
-            38.429996,
-            -122.653721
+            38.0,
+            -122.0
         ],
         "location": "",
         "order": 0
@@ -86,7 +91,6 @@ class wink_binary_switch():
 
      """
     jsonState = {}
-
 
 
     def __init__(self, aJSonObj):
@@ -136,6 +140,7 @@ class wink_binary_switch():
         """
         self.jsonState = response_json.get('data')
 
+
 class wink_bulb(wink_binary_switch):
     """ represents a wink.py bulb
     json_obj holds the json stat at init (and if there is a refresh it's updated
@@ -173,7 +178,7 @@ class wink_bulb(wink_binary_switch):
 	"desired_brightness": 1,
 	"desired_brightness_updated_at": 1417409293.2591703
 	},
-	"lat_lng":[38.429962, -122.653715],
+	"lat_lng":[38.0, -122.0],
 	"location": "",
 	"order": 0
 
@@ -216,6 +221,89 @@ class wink_bulb(wink_binary_switch):
         return deviceId or "Unknown Device ID"
 
 
+class wink_garage_door(wink_binary_switch):
+    """
+                {
+                "garage_door_id": "288",
+                "name": "Garage Door Opener",
+                "locale": "en_us",
+                "units": {},
+                "created_at": 1410066146,
+                "hidden_at": null,
+                "capabilities": {},
+                "subscription": {},
+                "triggers": [],
+                "desired_state": {
+                    "position": 0
+                },
+                "manufacturer_device_model": "chamberlain_vgdo",
+                "manufacturer_device_id": "862724",
+                "device_manufacturer": "chamberlain",
+                "model_name": "MyQ Garage Door Controller",
+                "upc_id": "26",
+                "linked_service_id": "16158",
+                "last_reading": {
+                    "connection": true,
+                    "connection_updated_at": 1419298844.2302883,
+                    "position": 0,
+                    "position_updated_at": 1419298248.359,
+                    "position_opened": "N/A",
+                    "position_opened_updated_at": 1419294518.034,
+                    "battery": 1,
+                    "battery_updated_at": 1419298844.2303011,
+                    "fault": false,
+                    "fault_updated_at": 1419298844.230295,
+                    "control_enabled": true,
+                    "control_enabled_updated_at": 1419298844.2302766,
+                    "desired_position": 0,
+                    "desired_position_updated_at": 1419298251.9991708
+                },
+                "lat_lng": [
+                    38.0,
+                    -122.0
+                ],
+                "location": "",
+                "order": 0
+            }
+    """
+    jsonState = {}
+
+    def __init__(self, ajsonobj):
+        self.jsonState = ajsonobj
+        self.objectprefix = "garage_doors"
+
+    def __str__(self):
+        return "%s %s %s" % (self.name(), self.deviceId(), self.state())
+
+    def __repr__(self):
+        return "<Wink Garage Door Opener %s %s %s>" % (self.name(), self.deviceId(), self.state())
+
+    def name(self):
+        name = self.jsonState.get('name')
+        return name or "Unknown Name"
+
+    def state(self):
+        state = self.jsonState.get('desired_state').get('position')
+        return True if state else False
+
+    def setState(self, state):
+        """
+        :param state:   a boolean of true (on) or false ('off')
+        :return: nothing
+        """
+        urlString = baseUrl + "/garage_doors/%s" % self.deviceId()
+        values = {"desired_state": {"position": 1 if state else 0}}
+        urlString = baseUrl + "/garage_doors/%s" % self.deviceId()
+        arequest = requests.put(urlString, data=json.dumps(values), headers=headers)
+
+        self.updateState()
+
+
+    def deviceId(self):
+        deviceId = self.jsonState.get('garage_door_id')
+        return deviceId or "Unknown Device ID"
+
+
 def get_bulbs_and_switches():
     arequestUrl = baseUrl + "/users/me/wink_devices"
     j = requests.get(arequestUrl, headers=headers).json()
@@ -234,11 +322,45 @@ def get_bulbs_and_switches():
     return switches
 
 
-def get_bulbs():
-    arequestUrl = baseUrl + "/users/me/wink_devices"
-    j = requests.get(arequestUrl, headers=headers).json()
+@Throttle(timedelta(seconds=60))
+def _get_json():
+    logger = logging.getLogger(__name__)
 
-    items = j.get('data')
+    logger.info("****************************** _get_json called within a throttle")
+    arequest_url = baseUrl + "/users/me/wink_devices"
+    j = requests.get(arequest_url, headers=headers).json()
+    return j
+
+
+def get_wink_json():
+    global wink_json
+    j = _get_json()
+
+    if j is not None:
+        wink_json = j.get('data')
+    return wink_json
+
+
+
+def get_garage_doors():
+    global wink_json
+    get_wink_json()
+    items = wink_json
+
+    garage_doors = []
+    for item in items:
+        id = item.get('garage_door_id')
+        if id != None:
+            garage_doors.append(wink_garage_door(item))
+
+    return garage_doors
+
+
+def get_bulbs():
+    global wink_json
+    get_wink_json()
+
+    items = wink_json
 
     switches = []
     for item in items:
@@ -250,10 +372,10 @@ def get_bulbs():
 
 
 def get_switches():
-    arequestUrl = baseUrl + "/users/me/wink_devices"
-    j = requests.get(arequestUrl, headers=headers).json()
+    global wink_json
+    get_wink_json()
 
-    items = j.get('data')
+    items = wink_json
 
     switches = []
     for item in items:
@@ -263,10 +385,12 @@ def get_switches():
 
     return switches
 
+
 def set_bearer_token(token):
     global headers
-    bearer_token=token
-    headers={"Content-Type": "application/json", "Authorization": "Bearer {}".format(token)}
+    bearer_token = token
+    headers = {"Content-Type": "application/json", "Authorization": "Bearer {}".format(token)}
+
 
 if __name__ == "__main__":
     sw = get_bulbs()
