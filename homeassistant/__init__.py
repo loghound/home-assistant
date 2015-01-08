@@ -15,6 +15,8 @@ import re
 import datetime as dt
 import functools as ft
 
+from requests.structures import CaseInsensitiveDict
+
 from homeassistant.const import (
     EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP,
     SERVICE_HOMEASSISTANT_STOP, EVENT_TIME_CHANGED, EVENT_STATE_CHANGED,
@@ -410,7 +412,14 @@ class EventBus(object):
 
 
 class State(object):
-    """ Object to represent a state within the state machine. """
+    """
+    Object to represent a state within the state machine.
+
+    entity_id: the entity that is represented.
+    state: the state of the entity
+    attributes: extra information on entity and state
+    last_changed: last time the state was changed, not the attributes.
+    """
 
     __slots__ = ['entity_id', 'state', 'attributes', 'last_changed']
 
@@ -418,7 +427,7 @@ class State(object):
         if not ENTITY_ID_PATTERN.match(entity_id):
             raise InvalidEntityFormatError((
                 "Invalid entity id encountered: {}. "
-                "Format should be <domain>.<entity>").format(entity_id))
+                "Format should be <domain>.<object_id>").format(entity_id))
 
         self.entity_id = entity_id
         self.state = state
@@ -465,32 +474,35 @@ class State(object):
 
     def __eq__(self, other):
         return (self.__class__ == other.__class__ and
+                self.entity_id == other.entity_id and
                 self.state == other.state and
                 self.attributes == other.attributes)
 
     def __repr__(self):
-        if self.attributes:
-            return "<state {}:{} @ {}>".format(
-                self.state, util.repr_helper(self.attributes),
-                util.datetime_to_str(self.last_changed))
-        else:
-            return "<state {} @ {}>".format(
-                self.state, util.datetime_to_str(self.last_changed))
+        attr = "; {}".format(util.repr_helper(self.attributes)) \
+               if self.attributes else ""
+
+        return "<state {}={}{} @ {}>".format(
+            self.entity_id, self.state, attr,
+            util.datetime_to_str(self.last_changed))
 
 
 class StateMachine(object):
     """ Helper class that tracks the state of different entities. """
 
     def __init__(self, bus):
-        self._states = {}
+        self._states = CaseInsensitiveDict()
         self._bus = bus
         self._lock = threading.Lock()
 
     def entity_ids(self, domain_filter=None):
         """ List of entity ids that are being tracked. """
         if domain_filter is not None:
-            return [entity_id for entity_id in self._states.keys()
-                    if util.split_entity_id(entity_id)[0] == domain_filter]
+            domain_filter = domain_filter.lower()
+
+            return [state.entity_id for key, state
+                    in self._states.lower_items()
+                    if util.split_entity_id(key)[0] == domain_filter]
         else:
             return list(self._states.keys())
 
@@ -524,29 +536,36 @@ class StateMachine(object):
                 self._states[entity_id].state == state)
 
     def remove(self, entity_id):
-        """ Removes a entity from the state machine.
+        """ Removes an entity from the state machine.
 
-        Returns boolean to indicate if a entity was removed. """
+        Returns boolean to indicate if an entity was removed. """
         with self._lock:
             return self._states.pop(entity_id, None) is not None
 
     def set(self, entity_id, new_state, attributes=None):
         """ Set the state of an entity, add entity if it does not exist.
 
-        Attributes is an optional dict to specify attributes of this state. """
+        Attributes is an optional dict to specify attributes of this state.
+
+        If you just update the attributes and not the state, last changed will
+        not be affected.
+        """
 
         attributes = attributes or {}
 
         with self._lock:
             old_state = self._states.get(entity_id)
 
+            is_existing = old_state is not None
+            same_state = is_existing and old_state.state == new_state
+            same_attr = is_existing and old_state.attributes == attributes
+
             # If state did not exist or is different, set it
-            if not old_state or \
-               old_state.state != new_state or \
-               old_state.attributes != attributes:
+            if not (same_state and same_attr):
+                last_changed = old_state.last_changed if same_state else None
 
                 state = self._states[entity_id] = \
-                    State(entity_id, new_state, attributes)
+                    State(entity_id, new_state, attributes, last_changed)
 
                 event_data = {'entity_id': entity_id, 'new_state': state}
 
@@ -567,14 +586,16 @@ class StateMachine(object):
         from_state = _process_match_param(from_state)
         to_state = _process_match_param(to_state)
 
-        # Ensure it is a list with entity ids we want to match on
+        # Ensure it is a lowercase list with entity ids we want to match on
         if isinstance(entity_ids, str):
-            entity_ids = [entity_ids]
+            entity_ids = [entity_ids.lower()]
+        else:
+            entity_ids = [entity_id.lower() for entity_id in entity_ids]
 
         @ft.wraps(action)
         def state_listener(event):
             """ The listener that listens for specific state changes. """
-            if event.data['entity_id'] in entity_ids and \
+            if event.data['entity_id'].lower() in entity_ids and \
                     'old_state' in event.data and \
                     _matcher(event.data['old_state'].state, from_state) and \
                     _matcher(event.data['new_state'].state, to_state):

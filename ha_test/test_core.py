@@ -198,14 +198,15 @@ class TestState(unittest.TestCase):
 
     def test_repr(self):
         """ Test state.repr """
-        self.assertEqual("<state on @ 12:00:00 08-12-1984>",
+        self.assertEqual("<state happy.happy=on @ 12:00:00 08-12-1984>",
                          str(ha.State(
                              "happy.happy", "on",
                              last_changed=datetime(1984, 12, 8, 12, 0, 0))))
 
-        self.assertEqual("<state on:brightness=144 @ 12:00:00 08-12-1984>",
-                         str(ha.State("happy.happy", "on", {"brightness": 144},
-                                      datetime(1984, 12, 8, 12, 0, 0))))
+        self.assertEqual(
+            "<state happy.happy=on; brightness=144 @ 12:00:00 08-12-1984>",
+            str(ha.State("happy.happy", "on", {"brightness": 144},
+                         datetime(1984, 12, 8, 12, 0, 0))))
 
 
 class TestStateMachine(unittest.TestCase):
@@ -284,6 +285,29 @@ class TestStateMachine(unittest.TestCase):
         self.bus._pool.block_till_done()
         self.assertEqual(1, len(specific_runs))
         self.assertEqual(3, len(wildcard_runs))
+
+    def test_case_insensitivty(self):
+        runs = []
+
+        self.states.track_change(
+            'light.BoWl', lambda a, b, c: runs.append(1),
+            ha.MATCH_ALL, ha.MATCH_ALL)
+
+        self.states.set('light.BOWL', 'off')
+        self.bus._pool.block_till_done()
+
+        self.assertTrue(self.states.is_state('light.bowl', 'off'))
+        self.assertEqual(1, len(runs))
+
+    def test_last_changed_not_updated_on_same_state(self):
+        state = self.states.get('light.Bowl')
+
+        time.sleep(1)
+
+        self.states.set("light.Bowl", "on")
+
+        self.assertEqual(state.last_changed,
+                         self.states.get('light.Bowl').last_changed)
 
 
 class TestServiceCall(unittest.TestCase):

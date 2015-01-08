@@ -13,8 +13,8 @@ from homeassistant.const import (
     SERVICE_TURN_ON, SERVICE_TURN_OFF, STATE_ON, STATE_OFF,
     ATTR_ENTITY_PICTURE, ATTR_ENTITY_ID, CONF_LATITUDE, CONF_LONGITUDE)
 from homeassistant.components.light import (
-    ATTR_XY_COLOR, ATTR_BRIGHTNESS, GROUP_NAME_ALL_LIGHTS)
-from homeassistant.util import split_entity_id
+    ATTR_XY_COLOR, ATTR_RGB_COLOR, ATTR_BRIGHTNESS, GROUP_NAME_ALL_LIGHTS)
+from homeassistant.util import split_entity_id, color_RGB_to_xy
 
 DOMAIN = "demo"
 
@@ -48,8 +48,25 @@ def setup(hass, config):
             domain, _ = split_entity_id(entity_id)
 
             if domain == "light":
-                data = {ATTR_BRIGHTNESS: 200,
-                        ATTR_XY_COLOR: random.choice(light_colors)}
+                rgb_color = service.data.get(ATTR_RGB_COLOR)
+
+                if rgb_color:
+                    color = color_RGB_to_xy(
+                        rgb_color[0], rgb_color[1], rgb_color[2])
+
+                else:
+                    cur_state = hass.states.get(entity_id)
+
+                    # Use current color if available
+                    if cur_state and cur_state.attributes.get(ATTR_XY_COLOR):
+                        color = cur_state.attributes.get(ATTR_XY_COLOR)
+                    else:
+                        color = random.choice(light_colors)
+
+                data = {
+                    ATTR_BRIGHTNESS: service.data.get(ATTR_BRIGHTNESS, 200),
+                    ATTR_XY_COLOR: color
+                }
             else:
                 data = None
 
@@ -124,7 +141,7 @@ def setup(hass, config):
                     })
 
     # Setup chromecast
-    hass.states.set("chromecast.Living_Rm", "Netflix",
+    hass.states.set("chromecast.Living_Rm", "Plex",
                     {'friendly_name': 'Living Room',
                      ATTR_ENTITY_PICTURE:
                      'http://graph.facebook.com/KillBillMovie/picture'})
